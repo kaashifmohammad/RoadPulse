@@ -1,0 +1,17 @@
+@"
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+roadpulse.db
+
+uploads/*
+!uploads/.gitkeep
+
+frontend/node_modules/
+frontend/.next/
+
+"@ | Set-Content .gitignore

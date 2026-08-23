@@ -1,7 +1,8 @@
 import os
 import uuid
 
-from fastapi import APIRouter, File, Form, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import SessionLocal
@@ -22,6 +23,23 @@ os.makedirs(
     UPLOAD_DIR,
     exist_ok=True,
 )
+
+
+VALID_STATUSES = {
+    "REPORTED",
+    "ASSIGNED",
+    "IN_PROGRESS",
+    "REPAIRED",
+    "COMPLETED",
+}
+
+
+class ContractorAssignment(BaseModel):
+    contractor: str
+
+
+class StatusUpdate(BaseModel):
+    status: str
 
 
 @router.post("/")
@@ -90,30 +108,22 @@ async def create_report(
 
         return {
             "message": "Pothole analyzed and report created",
-
             "complaint_id": complaint.id,
-
             "ai": {
                 "pothole_detected":
                     ai_result["pothole_detected"],
-
                 "severity":
                     ai_result["severity"],
-
                 "confidence":
                     ai_result["confidence"],
-
                 "priority":
                     ai_result["priority"],
             },
-
             "complaint": {
                 "status":
                     complaint.status,
-
                 "latitude":
                     complaint.latitude,
-
                 "longitude":
                     complaint.longitude,
             },
@@ -143,6 +153,108 @@ def get_reports():
             }
             for report in reports
         ]
+
+    finally:
+        db.close()
+
+
+@router.patch("/{report_id}/contractor")
+def assign_contractor(
+    report_id: int,
+    assignment: ContractorAssignment,
+):
+    db: Session = SessionLocal()
+
+    try:
+        report = (
+            db.query(Complaint)
+            .filter(Complaint.id == report_id)
+            .first()
+        )
+
+        if report is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Report not found",
+            )
+
+        contractor = assignment.contractor.strip()
+
+        if not contractor:
+            raise HTTPException(
+                status_code=400,
+                detail="Contractor cannot be empty",
+            )
+
+        report.contractor = contractor
+
+        # Assigning a contractor moves a reported
+        # complaint into the ASSIGNED state.
+        if report.status == "REPORTED":
+            report.status = "ASSIGNED"
+
+        db.commit()
+        db.refresh(report)
+
+        return {
+            "message": "Contractor assigned successfully",
+            "report": {
+                "id": report.id,
+                "contractor": report.contractor,
+                "status": report.status,
+            },
+        }
+
+    finally:
+        db.close()
+
+
+@router.patch("/{report_id}/status")
+def update_report_status(
+    report_id: int,
+    status_update: StatusUpdate,
+):
+    db: Session = SessionLocal()
+
+    try:
+        report = (
+            db.query(Complaint)
+            .filter(Complaint.id == report_id)
+            .first()
+        )
+
+        if report is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Report not found",
+            )
+
+        new_status = status_update.status.strip().upper()
+
+        if new_status not in VALID_STATUSES:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Invalid status. "
+                    "Allowed statuses: "
+                    "REPORTED, ASSIGNED, IN_PROGRESS, "
+                    "REPAIRED, COMPLETED"
+                ),
+            )
+
+        report.status = new_status
+
+        db.commit()
+        db.refresh(report)
+
+        return {
+            "message": "Report status updated successfully",
+            "report": {
+                "id": report.id,
+                "status": report.status,
+                "contractor": report.contractor,
+            },
+        }
 
     finally:
         db.close()

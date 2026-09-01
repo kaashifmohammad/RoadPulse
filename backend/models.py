@@ -1,5 +1,4 @@
-from sqlalchemy import Column, Integer, String
-
+from sqlalchemy import Boolean, Column, Float, Integer, String
 from .database import Base
 
 
@@ -24,6 +23,11 @@ class Complaint(Base):
     severity = Column(
         String,
         default="LOW",
+    )
+
+    ai_confidence = Column(
+        Float,
+        nullable=True,
     )
 
     status = Column(
@@ -59,4 +63,10 @@ class Complaint(Base):
     user_id = Column(
         Integer,
         nullable=True,
+    )
+
+    repair_points_awarded = Column(
+        Boolean,
+        default=False,
+        nullable=False,
     )

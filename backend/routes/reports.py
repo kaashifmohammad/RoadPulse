@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import SessionLocal
-from ..models import Complaint
+from ..models import Complaint,User
 
 from ai.inference import analyze_pothole
 
@@ -98,39 +98,70 @@ async def create_report(
             image_url=f"/uploads/{filename}",
             user_id=user_id,
             severity=severity,
+            ai_confidence=ai_result["confidence"],
             priority=priority,
             status="REPORTED",
         )
 
         db.add(complaint)
+        db.flush()
+
+        # -----------------------------
+        # ROADPOINTS REWARD
+        # -----------------------------
+
+        roadpoints_awarded = 0
+
+        user = (
+            db.query(User)
+            .filter(User.id == user_id)
+            .first()
+        )
+
+        if user is not None:
+            # Base reward for submitting a report.
+            roadpoints_awarded += 10
+
+            # AI detection bonus.
+            if ai_result["pothole_detected"]:
+                roadpoints_awarded += 5
+
+            # Severity bonus.
+            if severity == "HIGH":
+                roadpoints_awarded += 5
+
+            user.points = (user.points or 0) + roadpoints_awarded
+
         db.commit()
         db.refresh(complaint)
-
         return {
-            "message": "Pothole analyzed and report created",
-            "complaint_id": complaint.id,
-            "ai": {
-                "pothole_detected":
-                    ai_result["pothole_detected"],
-                "severity":
-                    ai_result["severity"],
-                "confidence":
-                    ai_result["confidence"],
-                "priority":
-                    ai_result["priority"],
-            },
-            "complaint": {
-                "status":
-                    complaint.status,
-                "latitude":
-                    complaint.latitude,
-                "longitude":
-                    complaint.longitude,
-            },
-        }
+                    "message": "Pothole analyzed and report created",
+                    "roadpoints": {
+                                "awarded": roadpoints_awarded,
+                            },
+                    "complaint_id": complaint.id,
+                    "ai": {
+                        "pothole_detected":
+                            ai_result["pothole_detected"],
+                        "severity":
+                            ai_result["severity"],
+                        "confidence":
+                            ai_result["confidence"],
+                        "priority":
+                            ai_result["priority"],
+                    },
+                    "complaint": {
+                        "status":
+                            complaint.status,
+                        "latitude":
+                            complaint.latitude,
+                        "longitude":
+                            complaint.longitude,
+                    },
+                }
 
     finally:
-        db.close()
+                db.close()
 
 
 @router.get("/")
@@ -145,6 +176,7 @@ def get_reports():
                 "id": report.id,
                 "title": report.title,
                 "severity": report.severity,
+                "ai_confidence": report.ai_confidence,
                 "status": report.status,
                 "latitude": report.latitude,
                 "longitude": report.longitude,
@@ -153,7 +185,6 @@ def get_reports():
             }
             for report in reports
         ]
-
     finally:
         db.close()
 
@@ -242,10 +273,40 @@ def update_report_status(
                 ),
             )
 
+        roadpoints_awarded = 0
+
+        # Award RoadPoints once when a complaint is repaired.
+        if (
+            new_status == "REPAIRED"
+            and not report.repair_points_awarded
+        ):
+            user = (
+                db.query(User)
+                .filter(User.id == report.user_id)
+                .first()
+            )
+
+            if user is not None:
+                user.points = (user.points or 0) + 5
+                report.repair_points_awarded = True
+                roadpoints_awarded = 5
+
         report.status = new_status
 
         db.commit()
         db.refresh(report)
+
+        user_points = None
+
+        if report.user_id is not None:
+            user = (
+                db.query(User)
+                .filter(User.id == report.user_id)
+                .first()
+            )
+
+            if user is not None:
+                user_points = user.points
 
         return {
             "message": "Report status updated successfully",
@@ -254,6 +315,35 @@ def update_report_status(
                 "status": report.status,
                 "contractor": report.contractor,
             },
+            "roadpoints": {
+                "awarded": roadpoints_awarded,
+                "total": user_points,
+            },
+        }
+
+    finally:
+        db.close()
+
+@router.get("/points/{user_id}")
+def get_user_points(user_id: int):
+    db: Session = SessionLocal()
+
+    try:
+        user = (
+            db.query(User)
+            .filter(User.id == user_id)
+            .first()
+        )
+
+        if user is None:
+            raise HTTPException(
+                status_code=404,
+                detail="User not found",
+            )
+
+        return {
+            "user_id": user.id,
+            "points": user.points or 0,
         }
 
     finally:

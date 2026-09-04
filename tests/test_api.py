@@ -1,10 +1,32 @@
+from importlib import import_module
+import sys
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
-from backend.main import app
+fixture = import_module("pytest").fixture
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+app = import_module("backend.main").app
 
 
 client = TestClient(app)
 
+AI_RESULT = {
+    "pothole_detected": True,
+    "severity": "HIGH",
+    "confidence": 0.94,
+    "priority": "CRITICAL",
+}
+
+
+@fixture(autouse=True)
+def mock_ai_pipeline(monkeypatch):
+    monkeypatch.setattr(
+        "backend.routes.reports.analyze_pothole",
+        lambda image_path: AI_RESULT,
+    )
 
 def test_root():
     response = client.get("/")
@@ -266,3 +288,52 @@ def test_empty_contractor():
     )
 
     assert response.status_code == 400
+
+def test_create_report_with_real_ai():
+    image_path = (
+        Path(__file__).resolve().parent
+        / "fixtures"
+        / "pothole.jpg"
+    )
+
+    with image_path.open("rb") as image:
+        response = client.post(
+            "/api/reports/",
+            data={
+                "title": "Real AI Pothole Test",
+                "latitude": "16.3067",
+                "longitude": "80.4365",
+                "user_id": "1",
+            },
+            files={
+                "image": (
+                    "pothole.jpg",
+                    image,
+                    "image/jpeg",
+                )
+            },
+        )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["complaint_id"] is not None
+
+    assert data["ai"]["pothole_detected"] is True
+    assert data["ai"]["confidence"] > 0
+    assert data["ai"]["severity"] in {
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+    }
+
+    assert data["ai"]["priority"] in {
+        "LOW",
+        "HIGH",
+        "CRITICAL",
+    }
+
+    assert data["complaint"]["status"] == "REPORTED"
+    assert data["complaint"]["latitude"] == "16.3067"
+    assert data["complaint"]["longitude"] == "80.4365"

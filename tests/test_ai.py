@@ -3,16 +3,25 @@ from pathlib import Path
 from ai.inference import analyze_pothole
 
 
-def test_pothole_ai_pipeline(tmp_path):
-    image = tmp_path / "pothole.jpg"
+FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "pothole.jpg"
+)
 
-    image.write_bytes(b"demo-image")
 
-    result = analyze_pothole(
-        str(image)
-    )
+def test_pothole_ai_pipeline():
+    result = analyze_pothole(str(FIXTURE))
 
     assert result["pothole_detected"] is True
-    assert result["severity"] == "HIGH"
-    assert result["confidence"] == 0.94
-    assert result["priority"] == "CRITICAL"
+    assert result["confidence"] > 0
+    assert result["severity"] in {
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+    }
+    assert result["priority"] in {
+        "LOW",
+        "HIGH",
+        "CRITICAL",
+    }

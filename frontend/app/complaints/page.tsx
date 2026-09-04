@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { getReports } from "@/services/api";
+import { getReports, getUserPoints } from "@/services/api";
 
 type Complaint = {
   id: number;
@@ -18,12 +18,21 @@ type Complaint = {
 export default function ComplaintsPage() {
   const [reports, setReports] = useState<Complaint[]>([]);
   const [loading, setLoading] = useState(true);
+  const [points, setPoints] = useState(0);
 
   useEffect(() => {
-    getReports()
-      .then(setReports)
-      .finally(() => setLoading(false));
-  }, []);
+  getReports()
+    .then(setReports)
+    .finally(() => setLoading(false));
+
+  getUserPoints(1)
+    .then((data) => {
+      setPoints(data.points ?? 0);
+    })
+    .catch(() => {
+      setPoints(0);
+    });
+}, []);
 
   return (
     <main className="min-h-screen bg-slate-950 text-white px-6 py-12">
@@ -39,7 +48,27 @@ export default function ComplaintsPage() {
         <p className="text-slate-400 mt-2 mb-8">
           Track your pothole reports.
         </p>
+        <div className="mb-8 rounded-2xl border border-emerald-500/20 bg-gradient-to-r from-emerald-500/10 to-blue-500/10 p-6">
+  <div className="flex items-center justify-between gap-4">
+    <div>
+      <p className="text-sm font-semibold text-emerald-400">
+        ROADPOINTS
+      </p>
 
+      <h2 className="mt-1 text-3xl font-bold">
+        {points} Points
+      </h2>
+
+      <p className="mt-2 text-sm text-slate-400">
+        Keep reporting road hazards and help make roads safer.
+      </p>
+    </div>
+
+    <div className="text-4xl">
+      🛣️
+    </div>
+  </div>
+</div>
         {loading && (
           <p className="text-slate-400">
             Loading complaints...

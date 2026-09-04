@@ -84,3 +84,13 @@ export async function updateReportStatus(
 
   return handleResponse(response);
 }
+export async function getUserPoints(userId: number) {
+  const response = await fetch(
+    `${API_URL}/reports/points/${userId}`,
+    {
+      cache: "no-store",
+    },
+  );
+
+  return handleResponse(response);
+}
